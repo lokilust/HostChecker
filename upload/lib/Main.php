@@ -2,19 +2,17 @@
 
 	class Main
 	{
-		/**
-		 * The function will return the page title depends on the file name
-		 *
-		 * @param $name
-		 *
-		 * @return string
-		 */
 		static public function pageTitle( $name )
 		{
-			$page   = $_SERVER['PHP_SELF'];
+			$page = isset( $_SERVER['PHP_SELF'] ) ? $_SERVER['PHP_SELF'] : '';
 			$string = strrchr( $page, '/' );
-			$length = strlen( $string ) - 1;
-			@$page = substr( $string, 1, $length );
+
+			if ( $string === false )
+			{
+				return $name;
+			}
+
+			$page = substr( $string, 1 );
 
 			switch ( $page )
 			{
@@ -42,76 +40,86 @@
 			}
 		}
 
-		/**
-		 * Function send an error to handleMessages, depends on the configuration
-		 *
-		 * @param $page
-		 * @param $errString
-		 * @param $status
-		 *
-		 * @return redict
-		 */
 		static public function setMessage( $page, $errString, $status = "" )
 		{
-			return header( 'Location: ' . $page . '?msg=' . urlencode( $errString ) . '&status=' . urlencode( $status ) );
+			$page = basename( $page );
+			$url = $page . '?msg=' . urlencode( $errString ) . '&status=' . urlencode( $status );
+			header( 'Location: ' . $url );
+			exit;
 		}
 
-		/**
-		 * The function will handle the error sent by the setMessage
-		 *
-		 * @return string
-		 */
 		static public function handleMessages()
 		{
 			if ( isset( $_REQUEST['msg'] ) )
 			{
-				if ( !empty( $_REQUEST['status'] ) )
+				$message = htmlspecialchars( $_REQUEST['msg'], ENT_QUOTES, 'UTF-8' );
+				$status = isset( $_REQUEST['status'] ) ? htmlspecialchars( $_REQUEST['status'], ENT_QUOTES, 'UTF-8' ) : '';
+
+				if ( !empty( $status ) )
 				{
-					return '<div class="alert ' . htmlspecialchars( $_REQUEST['status'] ) . '">' . htmlspecialchars( $_REQUEST['msg'] ) . '</div>';
-				} else
+					return '<div class="alert ' . $status . '">' . $message . '</div>';
+				}
+				else
 				{
-					return '<div class="alert">' . htmlspecialchars( $_REQUEST['msg'] ) . '</div>';
+					return '<div class="alert">' . $message . '</div>';
 				}
 			}
+
+			return '';
 		}
 
-		/**
-		 * Function for sending emails to the users whos host is down!
-		 *
-		 * @param $userid
-		 * @param $hostname
-		 */
 		static public function sendEmail( $userid, $hostname )
 		{
-			$string = "SELECT * FROM users WHERE id='" . $userid . "'";
-			$query  = mysql_query( $string );
-			$result = mysql_fetch_row( $query );
+			global $db;
 
-			$email    = $result['4'];
-			$name     = $result['5'];
-			$lastname = $result['6'];
+			$query = "SELECT email, name, lastname FROM users WHERE id = ? LIMIT 1";
+			$result = $db->query( $query, [(int)$userid] );
 
-			$headers = 'MIME-Version: 1.0' . "\r\n";
-			$headers .= 'Content-type: text/html; charset=iso-8859-1' . "\r\n";
-			$emailsubject = $hostname . " is Down!";
+			if ( !$result || $result->num_rows === 0 )
+			{
+				echo "Error: User not found\n";
+				return;
+			}
+
+			$row = $result->fetch_assoc();
+
+			$email = $row['email'];
+			$name = htmlspecialchars( $row['name'], ENT_QUOTES, 'UTF-8' );
+			$lastname = htmlspecialchars( $row['lastname'], ENT_QUOTES, 'UTF-8' );
+			$hostname = htmlspecialchars( $hostname, ENT_QUOTES, 'UTF-8' );
+
+			if ( !filter_var( $email, FILTER_VALIDATE_EMAIL ) )
+			{
+				echo "Error: Invalid email address\n";
+				return;
+			}
+
+			$headers = array(
+				'MIME-Version: 1.0',
+				'Content-type: text/html; charset=UTF-8',
+				'From: noreply@hostchecker.local'
+			);
+			$headers_str = implode( "\r\n", $headers );
+
+			$subject = $hostname . " is Down!";
+
 			$emailcontent = <<<EOF
 <html>
   <body>
-    Hello $name $lastname, <br /><br />
-
-    The Host name <b>$hostname</b> is DOWN! <br /><br />
-
-    Thank you, and have a good day <br />
+    <p>Hello $name $lastname,</p>
+    <p>The Host name <b>$hostname</b> is DOWN!</p>
+    <p>Thank you, and have a good day</p>
   </body>
 </html>
 EOF;
-			if ( mail( $email, $emailsubject, $emailcontent, $headers ) )
+
+			if ( mail( $email, $subject, $emailcontent, $headers_str ) )
 			{
-				echo "Email Sent Successfully <br />";
-			} else
+				echo "Email sent successfully\n";
+			}
+			else
 			{
-				echo "There was an error sending the email <br />";
+				echo "Error sending email\n";
 			}
 		}
-
 	}
