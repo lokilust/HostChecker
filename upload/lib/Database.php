@@ -2,30 +2,12 @@
 
 	class Database
 	{
-		/**
-		 * @var string $_localhost
-		 * @var string $_database
-		 * @var string $_dbuser
-		 * @var string $_dbpass
-		 */
 		private $_localhost;
 		private $_database;
 		private $_dbuser;
 		private $_dbpass;
-
-		/**
-		 * @var mixed $connection
-		 * @var mixed $dbselect
-		 */
 		private $_connection;
-		private $dbselect;
 
-		/**
-		 * @param string $host
-		 * @param string $db
-		 * @param string $user
-		 * @param string $pass
-		 */
 		public function __construct( $host = "localhost", $db = "database", $user = "user", $pass = "pass" )
 		{
 			$this->_localhost = $host;
@@ -34,28 +16,59 @@
 			$this->_dbpass    = $pass;
 		}
 
-		/**
-		 * @return bool
-		 */
 		public function connect()
 		{
-			$this->_connection = mysql_connect( $this->_localhost, $this->_dbuser, $this->_dbpass );
-
-			if ( !$this->_connection )
+			$this->_connection = new mysqli( $this->_localhost, $this->_dbuser, $this->_dbpass, $this->_database );
+			if ( $this->_connection->connect_error )
 			{
 				return false;
-			} else
-			{
-				$this->dbselect = mysql_select_db( $this->_database, $this->_connection );
+			}
+			$this->_connection->set_charset("utf8mb4");
+			return true;
+		}
 
-				if ( !$this->dbselect )
-				{
-					return false;
-				} else
-				{
-					return true;
-				}
+		public function getConnection()
+		{
+			return $this->_connection;
+		}
+
+		public function disconnect()
+		{
+			if ( $this->_connection )
+			{
+				$this->_connection->close();
 			}
 		}
 
+		public function query( $query, $params = array() )
+		{
+			if ( empty( $params ) )
+			{
+				return $this->_connection->query( $query );
+			}
+
+			$stmt = $this->_connection->prepare( $query );
+			if ( !$stmt )
+			{
+				return false;
+			}
+
+			if ( count( $params ) > 0 )
+			{
+				$types = '';
+				foreach ( $params as $param )
+				{
+					if ( is_int( $param ) )
+						$types .= 'i';
+					elseif ( is_float( $param ) )
+						$types .= 'd';
+					else
+						$types .= 's';
+				}
+				$stmt->bind_param( $types, ...$params );
+			}
+
+			$stmt->execute();
+			return $stmt->get_result();
+		}
 	}
