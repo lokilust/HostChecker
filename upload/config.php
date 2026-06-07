@@ -2,29 +2,14 @@
 	session_start();
 	ob_start();
 
-	/**
-	 * Variables needed for the configuration.
-	 * @var $scriptName is the variable used for the default name of the script
-	 * @var $extraDirectory is the Variable used for the subdirectory, if you are putting the script in a different folder
-	 * rather than public_html
-	 */
-	$scriptName = "HostChecker"; // The name of the script
-
-	/**
-	 * A specific variable if the script will be used in inner folder
-	 * keep it empty if the script is in the public_html folder
-	 */
+	$scriptName = "HostChecker";
 	define( 'LIB_PATH', "lib/" );
 
-	/**
-	 * The following files are to be included in the main script
-	 *
-	 *   require_once LIB_PATH . 'Main.php';
-	 *   require_once LIB_PATH . 'Database.php';
-	 *   require_once LIB_PATH . 'Users.php';
-	 *   require_once LIB_PATH . 'Check.php';
-	 *   require_once LIB_PATH . 'admin.php';
-	 */
+	define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+	define('DB_NAME', getenv('DB_NAME') ?: 'hostchecker');
+	define('DB_USER', getenv('DB_USER') ?: 'user');
+	define('DB_PASS', getenv('DB_PASS') ?: '');
+
 	function class_autoload( $class )
 	{
 		require_once LIB_PATH . $class . '.php';
@@ -32,20 +17,8 @@
 
 	spl_autoload_register( 'class_autoload' );
 
-	/**
-	 * Instantiating the database with its default values
-	 */
-	$db = new Database( "localhost", "database", "user", "password" );
+	$db = new Database( DB_HOST, DB_NAME, DB_USER, DB_PASS );
 	$db->connect() or die( "Database could not connect" );
-
-	/**
-	 * Initializing the Classes
-	 */
 
 	$myUser = new Users();
 	$myPing = new Check();
-
-
-
-
-
