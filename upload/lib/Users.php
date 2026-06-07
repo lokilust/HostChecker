@@ -2,430 +2,342 @@
 
 	class Users
 	{
+		private static $db;
 
-		/**
-		 * User registration function, when is runned it will register the user into the database
-		 *
-		 * @param $username
-		 * @param $password
-		 * @param $passrep
-		 * @param $email
-		 * @param $name
-		 * @param $lastname
-		 *
-		 * @return redict
-		 */
+		public function __construct()
+		{
+			global $db;
+			self::$db = $db;
+		}
+
 		public function userRegister( $username, $password, $passrep, $email, $name, $lastname )
 		{
-			$username = $this->dataEscape( $username );
-			$password = md5( $this->dataEscape( $password ) );
-			$passrep  = md5( $this->dataEscape( $passrep ) );
-			$email    = $this->dataEscape( $email );
-			$name     = $this->dataEscape( $name );
-			$lastname = $this->dataEscape( $lastname );
+			$username = trim( $username );
+			$email    = trim( $email );
+			$name     = trim( $name );
+			$lastname = trim( $lastname );
 
-
-			if ( !$this->checkUsername( $username ) )
+			if ( $password !== $passrep )
 			{
-				if ( !$this->checkPassRepetition( $password, $passrep ) )
-				{
-					if ( !$this->checkEmail( $email ) )
-					{
-						$string = 'INSERT INTO users (isadmin,username,password,email,name,lastname)';
-						$string .= 'VALUES(0,"' . $username . '","' . $password . '","' . $email . '","' . $name . '","' . $lastname . '")';
-
-						if ( mysql_query( $string ) )
-						{
-							Main::setMessage( "register.php", "You have successfully registered", "alert-success" );
-						} else
-						{
-							Main::setMessage( "register.php", "The values can not be inserted", "alert-error" );
-						}
-
-					} else
-					{
-						return Main::setMessage( "register.php", "Please input a correct Email Address", "alert-error" );
-					}
-				} else
-				{
-					return Main::setMessage( "register.php", "Please place the correct password in both fields", "alert-error" );
-				}
-			} else
-			{
-				return Main::setMessage( "register.php", "The username you added is already in the database", "alert-error" );
+				Main::setMessage( "register.php", "Passwords do not match", "alert-error" );
+				return;
 			}
 
+			if ( $this->checkUsername( $username ) )
+			{
+				Main::setMessage( "register.php", "The username already exists", "alert-error" );
+				return;
+			}
+
+			if ( !$this->checkEmail( $email ) )
+			{
+				Main::setMessage( "register.php", "Please input a valid email address", "alert-error" );
+				return;
+			}
+
+			$hashedPassword = password_hash( $password, PASSWORD_BCRYPT, ['cost' => 12] );
+
+			$query = "INSERT INTO users (isadmin, username, password, email, name, lastname) VALUES (0, ?, ?, ?, ?, ?)";
+			$result = self::$db->query( $query, [$username, $hashedPassword, $email, $name, $lastname] );
+
+			if ( $result !== false )
+			{
+				Main::setMessage( "register.php", "You have successfully registered", "alert-success" );
+			}
+			else
+			{
+				Main::setMessage( "register.php", "The values could not be inserted", "alert-error" );
+			}
 		}
 
-		/**
-		 * It will check if a X username exists in the database
-		 *
-		 * @param $user
-		 *
-		 * @return bool
-		 */
 		private function checkUsername( $user )
 		{
-			$string = "SELECT * FROM users WHERE username='" . $user . "' ";
-			$result = mysql_query( $string );
-			$check  = mysql_num_rows( $result );
-			if ( $check > 0 )
-			{
-				return true;
-			} else
-			{
-				return false;
-			}
+			$query = "SELECT id FROM users WHERE username = ? LIMIT 1";
+			$result = self::$db->query( $query, [$user] );
+
+			return $result && $result->num_rows > 0;
 		}
 
-		/**
-		 * It will check if the first password is equal to the second pass
-		 *
-		 * @param $pass1
-		 * @param $pass2
-		 *
-		 * @return bool
-		 */
-		private function checkPassRepetition( $pass1, $pass2 )
-		{
-			if ( $pass1 != $pass2 )
-			{
-				return true;
-			} else
-			{
-				return false;
-			}
-
-		}
-
-		/**
-		 * It will check if the email is a valid email
-		 *
-		 * @param $email
-		 *
-		 * @return bool
-		 */
 		private function checkEmail( $email )
 		{
-			if ( !preg_match( "/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/", $email ) )
-			{
-				return true;
-			} else
-			{
-				return false;
-			}
+			return filter_var( $email, FILTER_VALIDATE_EMAIL ) !== false;
 		}
 
-		/**
-		 * It will escape bad datas for mysql
-		 *
-		 * @param $data
-		 *
-		 * @return string
-		 */
-		public function dataEscape( $data )
-		{
-			return mysql_real_escape_string( $data );
-		}
-
-		/**
-		 * It will login the user and created a session variable with value true
-		 *
-		 * @param $username
-		 * @param $password
-		 *
-		 * @return bool
-		 */
 		public function userLogin( $username, $password )
 		{
-			$username = $this->dataEscape( $username );
-			$password = $this->dataEscape( $password );
+			$username = trim( $username );
 
-			$hashpass = md5( $password );
-			$string   = "SELECT * FROM users WHERE (username = '" . $username . "') and (password ='" . $hashpass . "')";
-			$userid   = "SELECT id FROM users WHERE username='" . $username . "'";
-			$login    = mysql_query( $string );
-			$result   = mysql_query( $userid );
+			$query = "SELECT id, password FROM users WHERE username = ? LIMIT 1";
+			$result = self::$db->query( $query, [$username] );
 
-			while ( $row = mysql_fetch_row( $result ) )
+			if ( !$result || $result->num_rows === 0 )
 			{
-				$_SESSION['userid'] = $row['0'];
+				return false;
 			}
 
-			if ( mysql_num_rows( $login ) == 1 )
+			$row = $result->fetch_assoc();
+
+			if ( password_verify( $password, $row['password'] ) )
 			{
+				$_SESSION['userid'] = $row['id'];
 				$_SESSION['logedin'] = true;
 				return true;
-			} else
-			{
-				return false;
 			}
 
+			return false;
 		}
 
-		/**
-		 * It will check if an user is logged and redict to Index if its true
-		 */
 		public function isLogedin()
 		{
-			if ( isset( $_SESSION['logedin'] ) && $_SESSION == true )
+			if ( isset( $_SESSION['logedin'] ) && $_SESSION['logedin'] === true )
 			{
-				Main::setMessage( "index.php", "You are logedin and so you can not view this page!", "alert-error" );
+				Main::setMessage( "index.php", "You are logged in and cannot view this page!", "alert-error" );
 			}
 		}
 
-		/**
-		 * It will check if a user is not logged in and it will redict to index if its true
-		 */
 		public function notLogedin()
 		{
-			if ( !( isset( $_SESSION['logedin'] ) && $_SESSION == true ) )
+			if ( !isset( $_SESSION['logedin'] ) || $_SESSION['logedin'] !== true )
 			{
-				Main::setMessage( "index.php", "You are not Logedin to view this page!", "alert-error" );
+				Main::setMessage( "index.php", "You are not logged in to view this page!", "alert-error" );
 			}
 		}
 
-		/**
-		 * It will check whether the user is logged in or not and a boolean value will be returned
-		 *
-		 * @return bool
-		 */
 		public function LogedinBool()
 		{
-			if ( isset( $_SESSION['logedin'] ) && $_SESSION == true )
-			{
-				return true;
-			} else
-			{
-				return false;
-			}
+			return isset( $_SESSION['logedin'] ) && $_SESSION['logedin'] === true;
 		}
 
-		/**
-		 * It will update the password of the user
-		 *
-		 * @param $userid
-		 * @param $oldPassword
-		 * @param $newPassword
-		 * @param $passRep
-		 */
 		public function passUpdate( $userid, $oldPassword, $newPassword, $passRep )
 		{
-			$oldPassword = md5( $this->dataEscape( $oldPassword ) );
-			$newPassword = md5( $this->dataEscape( $newPassword ) );
-			$passRep     = md5( $this->dataEscape( $passRep ) );
-			$string      = "SELECT password FROM users WHERE id='" . $userid . "'";
-			$result      = mysql_query( $string );
-			$check       = mysql_fetch_row( $result );
-
-			if ( $check[0] == $oldPassword )
+			if ( $newPassword !== $passRep )
 			{
-				if ( $newPassword == $passRep )
-				{
-					$string = "UPDATE users SET password='" . $newPassword . "' WHERE id='" . $userid . "'";
-					if ( mysql_query( $string ) )
-					{
-						Main::setMessage( "settings.php", "Password Updated Successfully!", "alert-success" );
-					} else
-					{
-						Main::setMessage( "settings.php", "Password could not be updated!", "alert-error" );
-					}
-				} else
-				{
-					Main::setMessage( "settings.php", "Please check if the repeated password correspond", "alert-error" );
-				}
-			} else
-			{
-				Main::setMessage( "settings.php", "Please input your old password correctly!", "alert-error" );
+				Main::setMessage( "settings.php", "New passwords do not match", "alert-error" );
+				return;
 			}
 
+			$query = "SELECT password FROM users WHERE id = ? LIMIT 1";
+			$result = self::$db->query( $query, [(int)$userid] );
 
+			if ( !$result || $result->num_rows === 0 )
+			{
+				Main::setMessage( "settings.php", "User not found", "alert-error" );
+				return;
+			}
+
+			$row = $result->fetch_assoc();
+
+			if ( !password_verify( $oldPassword, $row['password'] ) )
+			{
+				Main::setMessage( "settings.php", "Current password is incorrect", "alert-error" );
+				return;
+			}
+
+			$hashedPassword = password_hash( $newPassword, PASSWORD_BCRYPT, ['cost' => 12] );
+
+			$updateQuery = "UPDATE users SET password = ? WHERE id = ?";
+			$updateResult = self::$db->query( $updateQuery, [$hashedPassword, (int)$userid] );
+
+			if ( $updateResult !== false )
+			{
+				Main::setMessage( "settings.php", "Password updated successfully!", "alert-success" );
+			}
+			else
+			{
+				Main::setMessage( "settings.php", "Password could not be updated", "alert-error" );
+			}
 		}
 
-		/**
-		 * It will update the email of the user
-		 *
-		 * @param $userid
-		 * @param $oldEmail
-		 * @param $newEmail
-		 * @param $password
-		 */
 		public function emailUpdate( $userid, $oldEmail, $newEmail, $password )
 		{
-			$oldEmail = $this->dataEscape( $oldEmail );
-			$newEmail = $this->dataEscape( $newEmail );
-			$password = md5( $this->dataEscape( $password ) );
+			$oldEmail = trim( $oldEmail );
+			$newEmail = trim( $newEmail );
 
-			$string = "SELECT email,password FROM users WHERE id='" . $userid . "'";
-			$result = mysql_query( $string );
-			$checke = mysql_fetch_row( $result );
-
-			if ( ( $checke[0] == $oldEmail ) && ( $checke[1] == $password ) )
+			if ( !$this->checkEmail( $newEmail ) )
 			{
-				$string = "UPDATE users SET email='" . $newEmail . "' WHERE id='" . $userid . "'";
-				if ( mysql_query( $string ) )
-				{
-					Main::setMessage( "settings.php", "Email Updated Successfully!", "alert-success" );
-				} else
-				{
-					Main::setMessage( "settings.php", "Password could not be Updated Successfully!", "alert-error" );
-				}
-			} else
-			{
-				Main::setMessage( "settings.php", "Please check if the old email and password are ok!", "alert-error" );
+				Main::setMessage( "settings.php", "Please input a valid email address", "alert-error" );
+				return;
 			}
 
+			$query = "SELECT password, email FROM users WHERE id = ? LIMIT 1";
+			$result = self::$db->query( $query, [(int)$userid] );
+
+			if ( !$result || $result->num_rows === 0 )
+			{
+				Main::setMessage( "settings.php", "User not found", "alert-error" );
+				return;
+			}
+
+			$row = $result->fetch_assoc();
+
+			if ( $row['email'] !== $oldEmail || !password_verify( $password, $row['password'] ) )
+			{
+				Main::setMessage( "settings.php", "Old email or password is incorrect", "alert-error" );
+				return;
+			}
+
+			$updateQuery = "UPDATE users SET email = ? WHERE id = ?";
+			$updateResult = self::$db->query( $updateQuery, [$newEmail, (int)$userid] );
+
+			if ( $updateResult !== false )
+			{
+				Main::setMessage( "settings.php", "Email updated successfully!", "alert-success" );
+			}
+			else
+			{
+				Main::setMessage( "settings.php", "Email could not be updated", "alert-error" );
+			}
 		}
 
-		/**
-		 * If will add a host to the database
-		 *
-		 * @param $userid
-		 * @param $hostname
-		 * @param $host
-		 * @param $port
-		 * @param $ispublic
-		 */
 		public function addHost( $userid, $hostname, $host, $port, $ispublic )
 		{
-			$hostname = $this->dataEscape( $hostname );
-			$host     = $this->dataEscape( $host );
-			$port     = $this->dataEscape( $port );
+			$hostname = trim( $hostname );
+			$host     = trim( $host );
+			$port     = (int)$port;
+			$ispublic = (int)$ispublic;
 
-			if ( !empty( $hostname ) )
+			if ( empty( $hostname ) )
 			{
-				if ( !empty( $host ) && preg_match( "/(?:[A-Za-z0-9-]+.?)+/", $host ) )
-				{
-					if ( !empty( $port ) )
-					{
-						$string = "INSERT INTO hosts (user_id, hostname, host, port, ispublic)";
-						$string .= "VALUES(" . $userid . ", '" . $hostname . "','" . $host . "'," . $port . ", " . $ispublic . ")";
-						if ( mysql_query( $string ) )
-						{
-							Main::setMessage( "host.php", "The host was added successfully!", "alert-success" );
-						} else
-						{
-							Main::setMessage( "host.php", mysql_error(), "alert-error" );
-						}
-
-					} else
-					{
-						Main::setMessage( "host.php", "Please check the value of the port field!", "alert-error" );
-					}
-				} else
-				{
-					Main::setMessage( "host.php", "Please input correctly the domain or the IP of the Host!", "alert-error" );
-				}
-			} else
-			{
-				Main::setMessage( "host.php", "Please input the hostname correctly!", "alert-error" );
+				Main::setMessage( "host.php", "Please enter a hostname", "alert-error" );
+				return;
 			}
 
+			if ( empty( $host ) || !preg_match( "/^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$|^([0-9]{1,3}\.){3}[0-9]{1,3}$/", $host ) )
+			{
+				Main::setMessage( "host.php", "Please enter a valid domain or IP address", "alert-error" );
+				return;
+			}
+
+			if ( $port < 1 || $port > 65535 )
+			{
+				Main::setMessage( "host.php", "Please enter a valid port number (1-65535)", "alert-error" );
+				return;
+			}
+
+			$query = "INSERT INTO hosts (user_id, hostname, host, port, ispublic) VALUES (?, ?, ?, ?, ?)";
+			$result = self::$db->query( $query, [(int)$userid, $hostname, $host, $port, $ispublic] );
+
+			if ( $result !== false )
+			{
+				Main::setMessage( "host.php", "Host added successfully!", "alert-success" );
+			}
+			else
+			{
+				Main::setMessage( "host.php", "Error adding host", "alert-error" );
+			}
 		}
 
-		/**
-		 * It will select all public hosts
-		 */
 		public function selectPublicHost()
 		{
-			$string = "SELECT * FROM hosts WHERE ispublic=1";
+			$query = "SELECT * FROM hosts WHERE ispublic = 1";
+			$result = self::$db->query( $query );
 
-			if ( $result = mysql_query( $string ) )
+			if ( !$result )
 			{
-				echo "<table class=\"table table-bordered table-hover\">
-                        <thead>
-                        <tr>
-                            <th>Host Name</th>
-                            <th>Domain or IP</th>
-                            <th>Port</th>
-                            <th>Status</th>
-                        </tr>
-                        </thead>";
-				while ( $row = mysql_fetch_assoc( $result ) )
-				{
-					echo "<tr>";
-					echo "<td>" . htmlspecialchars( $row['hostname'] ) . "</td>";
-					echo "<td>" . htmlspecialchars( $row['host'] ) . "</td>";
-					echo "<td>" . htmlspecialchars( $row['port'] ) . "</td>";
-					echo Check::checkServer( $row['host'], $row['port'] ) ? "<td style=\"text-align: center;\"><span class=\"glyphicon glyphicon-thumbs-up\"></span></td>" : "<td style=\"text-align: center;\"><span class=\"glyphicon glyphicon-thumbs-down\"></span></td>";
-					echo "</tr>";
-				}
-				echo "</table>";
-			} else
-			{
-				Main::setMessage( "index.php", mysql_error(), "alert-error" );
+				Main::setMessage( "index.php", "Error fetching hosts", "alert-error" );
+				return;
 			}
 
+			echo "<table class=\"table table-bordered table-hover\">
+					<thead>
+					<tr>
+						<th>Host Name</th>
+						<th>Domain or IP</th>
+						<th>Port</th>
+						<th>Status</th>
+					</tr>
+					</thead>";
+
+			while ( $row = $result->fetch_assoc() )
+			{
+				echo "<tr>";
+				echo "<td>" . htmlspecialchars( $row['hostname'], ENT_QUOTES, 'UTF-8' ) . "</td>";
+				echo "<td>" . htmlspecialchars( $row['host'], ENT_QUOTES, 'UTF-8' ) . "</td>";
+				echo "<td>" . htmlspecialchars( $row['port'], ENT_QUOTES, 'UTF-8' ) . "</td>";
+
+				$status = Check::checkServer( $row['host'], $row['port'] ) ? 
+					"<span class=\"glyphicon glyphicon-thumbs-up\"></span>" : 
+					"<span class=\"glyphicon glyphicon-thumbs-down\"></span>";
+				echo "<td style=\"text-align: center;\">" . $status . "</td>";
+				echo "</tr>";
+			}
+			echo "</table>";
 		}
 
-		/**
-		 * It will select all private hosts
-		 *
-		 * @param $userid
-		 */
 		public function selectPrivateHost( $userid )
 		{
-			$string = "SELECT * FROM hosts WHERE user_id='" . $userid . "'";
+			$query = "SELECT * FROM hosts WHERE user_id = ?";
+			$result = self::$db->query( $query, [(int)$userid] );
 
-			if ( $result = mysql_query( $string ) )
+			if ( !$result )
 			{
-				echo "<table class=\"table table-bordered table-hover\">
-                        <thead>
-                        <tr>
-                            <th>Host Name</th>
-                            <th>Domain or IP</th>
-                            <th>Port</th>
-                            <th>Status</th>
-                            <th>Ping</th>
-                            <th>Delete</th>
-                        </tr>
-                        </thead>";
-				while ( $row = mysql_fetch_assoc( $result ) )
-				{
-					echo "<tr>";
-					echo "<td>" . htmlspecialchars( $row['hostname'] ) . "</td>";
-					echo "<td>" . htmlspecialchars( $row['host'] ) . "</td>";
-					echo "<td>" . htmlspecialchars( $row['port'] ) . "</td>";
-					echo Check::checkServer( $row['host'], $row['port'] ) ? "<td style=\"text-align: center;\"><span class=\"glyphicon glyphicon-thumbs-up\"></span></td>" : "<td style=\"text-align: center;\"><span class=\"glyphicon glyphicon-thumbs-down\"></span></td>";
-					echo "<td style=\"text-align:center;\"><a class=\"btn btn-primary btn-small\" href=\"ping.php?host=" . $row['host'] . "&port=" . $row['port'] . "&count=4\"><span class=\"glyphicon glyphicon-globe\"></span> Ping</a></td>";
-					echo "<td style=\"text-align:center;\"><a class=\"btn btn-info btn-small\" onclick=\"deleteFunction(" . $row['id'] . ")\"><span class=\"glyphicon glyphicon-remove\"></span></a></td>";
-					echo "</tr>";
-				}
-				echo "</table>";
-			} else
-			{
-				Main::setMessage( "index.php", mysql_error(), "alert-error" );
+				Main::setMessage( "index.php", "Error fetching hosts", "alert-error" );
+				return;
 			}
 
+			echo "<table class=\"table table-bordered table-hover\">
+					<thead>
+					<tr>
+						<th>Host Name</th>
+						<th>Domain or IP</th>
+						<th>Port</th>
+						<th>Status</th>
+						<th>Ping</th>
+						<th>Delete</th>
+					</tr>
+					</thead>";
+
+			while ( $row = $result->fetch_assoc() )
+			{
+				echo "<tr>";
+				echo "<td>" . htmlspecialchars( $row['hostname'], ENT_QUOTES, 'UTF-8' ) . "</td>";
+				echo "<td>" . htmlspecialchars( $row['host'], ENT_QUOTES, 'UTF-8' ) . "</td>";
+				echo "<td>" . htmlspecialchars( $row['port'], ENT_QUOTES, 'UTF-8' ) . "</td>";
+
+				$status = Check::checkServer( $row['host'], $row['port'] ) ? 
+					"<span class=\"glyphicon glyphicon-thumbs-up\"></span>" : 
+					"<span class=\"glyphicon glyphicon-thumbs-down\"></span>";
+				echo "<td style=\"text-align: center;\">" . $status . "</td>";
+
+				echo "<td style=\"text-align:center;\"><a class=\"btn btn-primary btn-small\" href=\"ping.php?host=" . urlencode( $row['host'] ) . "&port=" . urlencode( $row['port'] ) . "&count=4\"><span class=\"glyphicon glyphicon-signal\"></span></a></td>";
+				echo "<td style=\"text-align:center;\"><a class=\"btn btn-info btn-small\" onclick=\"deleteFunction(" . (int)$row['id'] . ")\"><span class=\"glyphicon glyphicon-remove\"></span></a></td>";
+				echo "</tr>";
+			}
+			echo "</table>";
 		}
 
-		/**
-		 * It will delete a specific host
-		 *
-		 * @param $userid
-		 * @param $hostid
-		 */
 		public function hostDelete( $userid, $hostid )
 		{
-			$string     = "DELETE FROM hosts WHERE id=" . $hostid . " AND user_id=" . $userid . "";
-			$validation = "SELECT user_id FROM hosts WHERE id=" . $hostid . "";
-			$result     = mysql_query( $validation );
-			$row        = mysql_fetch_row( $result );
+			$userid = (int)$userid;
+			$hostid = (int)$hostid;
 
-			if ( $row[0] == $userid )
+			$query = "SELECT user_id FROM hosts WHERE id = ? LIMIT 1";
+			$result = self::$db->query( $query, [$hostid] );
+
+			if ( !$result || $result->num_rows === 0 )
 			{
-				if ( mysql_query( $string ) )
-				{
-					Main::setMessage( "index.php", "The host was successfully deleted from the database!", "alert-success" );
-				} else
-				{
-					Main::setMessage( "index.php", mysql_error(), "alert-error" );
-				}
-			} else
-			{
-				Main::setMessage( "index.php", "There was an error, please retry again!", "alert-error" );
+				Main::setMessage( "index.php", "Host not found", "alert-error" );
+				return;
 			}
 
-		}
+			$row = $result->fetch_assoc();
 
+			if ( (int)$row['user_id'] !== $userid )
+			{
+				Main::setMessage( "index.php", "Unauthorized: You cannot delete this host", "alert-error" );
+				return;
+			}
+
+			$deleteQuery = "DELETE FROM hosts WHERE id = ? AND user_id = ?";
+			$deleteResult = self::$db->query( $deleteQuery, [$hostid, $userid] );
+
+			if ( $deleteResult !== false )
+			{
+				Main::setMessage( "index.php", "Host deleted successfully!", "alert-success" );
+			}
+			else
+			{
+				Main::setMessage( "index.php", "Error deleting host", "alert-error" );
+			}
+		}
 	}
