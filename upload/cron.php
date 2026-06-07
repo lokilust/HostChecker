@@ -1,14 +1,27 @@
 <?php
 	require_once 'config.php';
 
-	$query  = "SELECT * FROM hosts";
-	$result = mysql_query( $query );
+	$query  = "SELECT h.id, h.host, h.port, h.user_id, h.hostname FROM hosts h";
+	$result = $GLOBALS['db']->getConnection()->query( $query );
 
-	while ( $row = mysql_fetch_assoc( $result ) )
+	if ( !$result )
 	{
-		if ( !Check::checkServer( $row['host'], $row['port'] ) )
-		{
-			Main::sendEmail( $row['user_id'], $row['hostname'] );
-		}
+		echo "Error fetching hosts\n";
+		exit;
 	}
 
+	while ( $row = $result->fetch_assoc() )
+	{
+		try
+		{
+			if ( !Check::checkServer( $row['host'], $row['port'] ) )
+			{
+				Main::sendEmail( $row['user_id'], $row['hostname'] );
+				echo "Alert sent for: " . htmlspecialchars( $row['hostname'] ) . "\n";
+			}
+		}
+		catch ( Exception $e )
+		{
+			echo "Error checking host\n";
+		}
+	}
